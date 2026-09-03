@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- LSPosed 作用域配置 -->
+<xposedmodule>
+    <scope>com.android.systemui</scope>
+</xposedmodule>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- LSPosed 模块描述 -->
+<resources>
+    <string name="xposed_module_name">状态栏漂流瓶</string>
+    <string name="xposed_description">周期性水平偏移状态栏内容，防止 OLED 烧屏。仅 Hook SystemUI。</string>
+    <string name="xposed_scope_com_android_systemui">com.android.systemui</string>
+</resources>
