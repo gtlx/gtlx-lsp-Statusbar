@@ -1,7 +1,6 @@
 package com.gtlx.statusbardrift;
 
 import android.app.Activity;
-import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -12,26 +11,31 @@ import android.graphics.Color;
 import android.view.Gravity;
 import android.util.TypedValue;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.util.Properties;
+
 /**
  * 状态栏漂流瓶 —— 设置界面
  */
 public class MainActivity extends Activity {
 
-    private static final String PREFS_NAME = "status_bar_drift";
+    private static final String CONFIG_FILE = "status_bar_drift.conf";
     private static final String KEY_DRIFT_PX = "drift_px";
     private static final String KEY_INTERVAL_SEC = "interval_sec";
 
     private static final int DEFAULT_DRIFT_PX = 3;
     private static final int DEFAULT_INTERVAL_SEC = 30;
 
-    private SharedPreferences mPrefs;
     private TextView mDriftValue;
     private TextView mIntervalValue;
+    private int mDriftPx = DEFAULT_DRIFT_PX;
+    private int mIntervalSec = DEFAULT_INTERVAL_SEC;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        mPrefs = getSharedPreferences(PREFS_NAME, MODE_WORLD_READABLE);
+        loadConfig();
 
         ScrollView sv = new ScrollView(this);
         LinearLayout ll = new LinearLayout(this);
@@ -63,22 +67,20 @@ public class MainActivity extends Activity {
         ll.addView(driftLabel);
 
         mDriftValue = new TextView(this);
-        mDriftValue.setText(getCurrentDrift() + " px");
+        mDriftValue.setText(mDriftPx + " px");
         mDriftValue.setTextSize(14);
         mDriftValue.setTextColor(0xFF4DD0E1);
         ll.addView(mDriftValue);
 
         SeekBar driftBar = new SeekBar(this);
         driftBar.setMax(10);
-        driftBar.setProgress(getCurrentDrift() - 1);
+        driftBar.setProgress(mDriftPx - 1);
         driftBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                int px = progress + 1;
-                mDriftValue.setText(px + " px");
-                if (fromUser) {
-                    mPrefs.edit().putInt(KEY_DRIFT_PX, px).apply();
-                }
+                mDriftPx = progress + 1;
+                mDriftValue.setText(mDriftPx + " px");
+                if (fromUser) saveConfig();
             }
             @Override public void onStartTrackingTouch(SeekBar s) {}
             @Override public void onStopTrackingTouch(SeekBar s) {}
@@ -94,22 +96,20 @@ public class MainActivity extends Activity {
         ll.addView(intervalLabel);
 
         mIntervalValue = new TextView(this);
-        mIntervalValue.setText(getCurrentInterval() + " 秒");
+        mIntervalValue.setText(mIntervalSec + " 秒");
         mIntervalValue.setTextSize(14);
         mIntervalValue.setTextColor(0xFF4DD0E1);
         ll.addView(mIntervalValue);
 
         SeekBar intervalBar = new SeekBar(this);
         intervalBar.setMax(115); // 5-120秒
-        intervalBar.setProgress(getCurrentInterval() - 5);
+        intervalBar.setProgress(mIntervalSec - 5);
         intervalBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                int sec = progress + 5;
-                mIntervalValue.setText(sec + " 秒");
-                if (fromUser) {
-                    mPrefs.edit().putInt(KEY_INTERVAL_SEC, sec).apply();
-                }
+                mIntervalSec = progress + 5;
+                mIntervalValue.setText(mIntervalSec + " 秒");
+                if (fromUser) saveConfig();
             }
             @Override public void onStartTrackingTouch(SeekBar s) {}
             @Override public void onStopTrackingTouch(SeekBar s) {}
@@ -156,12 +156,44 @@ public class MainActivity extends Activity {
         setContentView(sv);
     }
 
-    private int getCurrentDrift() {
-        return mPrefs.getInt(KEY_DRIFT_PX, DEFAULT_DRIFT_PX);
+    private File getConfigFile() {
+        // 存在外部存储 app 私有目录，SystemUI 可以读到
+        File dir = getExternalFilesDir(null);
+        if (dir == null) dir = getFilesDir();
+        return new File(dir, CONFIG_FILE);
     }
 
-    private int getCurrentInterval() {
-        return mPrefs.getInt(KEY_INTERVAL_SEC, DEFAULT_INTERVAL_SEC);
+    private void loadConfig() {
+        try {
+            File f = getConfigFile();
+            if (!f.exists()) return;
+            Properties props = new Properties();
+            java.io.FileInputStream fis = new java.io.FileInputStream(f);
+            props.load(fis);
+            fis.close();
+            mDriftPx = Integer.parseInt(props.getProperty(KEY_DRIFT_PX, String.valueOf(DEFAULT_DRIFT_PX)));
+            mIntervalSec = Integer.parseInt(props.getProperty(KEY_INTERVAL_SEC, String.valueOf(DEFAULT_INTERVAL_SEC)));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void saveConfig() {
+        new Thread(() -> {
+            try {
+                File f = getConfigFile();
+                Properties props = new Properties();
+                props.setProperty(KEY_DRIFT_PX, String.valueOf(mDriftPx));
+                props.setProperty(KEY_INTERVAL_SEC, String.valueOf(mIntervalSec));
+                FileOutputStream fos = new FileOutputStream(f);
+                props.store(fos, "StatusBarDrift config");
+                fos.close();
+                // 设置全局可读，SystemUI 才能读
+                f.setReadable(true, false);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }).start();
     }
 
     private int dp(int px) {

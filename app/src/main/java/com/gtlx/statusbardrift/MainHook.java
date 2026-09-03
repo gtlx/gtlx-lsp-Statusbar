@@ -9,12 +9,14 @@ import de.robv.android.xposed.XposedBridge;
 
 import android.app.Application;
 import android.content.Context;
-import android.content.SharedPreferences;
+import android.os.Environment;
 import android.os.FileObserver;
 import android.view.View;
 import android.util.Log;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.util.Properties;
 
 /**
  * 状态栏漂流瓶 —— 周期性水平偏移状态栏内容，防 OLED 烧屏。
@@ -23,14 +25,12 @@ import java.io.File;
 public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
 
     private static final String TAG = "StatusBarDrift";
-    private static final String PREFS_NAME = "com.gtlx.statusbardrift_preferences";
-    private static final String PREFS_NAME_X = "status_bar_drift";
+    private static final String CONFIG_FILE = "status_bar_drift.conf";
     private static final String KEY_DRIFT_PX = "drift_px";
     private static final String KEY_INTERVAL_SEC = "interval_sec";
 
     private static int sDriftPx = 3;
     private static long sIntervalMs = 30_000L;
-    private static boolean sConfigLoaded = false;
 
     private static View sStatusBarView;
     private static int sDirection = 1;
@@ -43,6 +43,7 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
             sDirection = -sDirection;
             try {
                 sStatusBarView.setTranslationX(target);
+                try { XposedBridge.log("[StatusBarDrift] drift → " + target + "px"); } catch (Throwable ignored) {}
             } catch (Throwable t) {
                 Log.e(TAG, "drift error", t);
                 return;
@@ -74,7 +75,6 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
                         protected void afterHookedMethod(MethodHookParam param) {
                             Context ctx = (Application) param.thisObject;
                             loadConfig(ctx);
-                            // 监听配置文件变化
                             startWatchingConfig(ctx);
                         }
                     });
@@ -96,7 +96,6 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
                         protected void afterHookedMethod(MethodHookParam param) {
                             View view = (View) param.thisObject;
                             log("PhoneStatusBarView.onAttachedToWindow, post start drift");
-                            // 用 view.post 确保在正确的线程且 layout 完成
                             view.post(() -> startDrifting(view));
                         }
                     });
@@ -116,20 +115,37 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
         }
     }
 
+    private static File getConfigFile(Context ctx) {
+        // 优先读外部存储 app 私有目录的配置（App 端写在这里）
+        try {
+            File extDir = new File(
+                    Environment.getExternalStorageDirectory(),
+                    "Android/data/com.gtlx.statusbardrift/files/" + CONFIG_FILE);
+            if (extDir.exists()) return extDir;
+        } catch (Throwable ignored) {}
+        // 兜底：App 的私有 files 目录
+        try {
+            File appDir = new File(
+                    "/data/data/com.gtlx.statusbardrift/files/" + CONFIG_FILE);
+            if (appDir.exists()) return appDir;
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
     private static synchronized void loadConfig(Context ctx) {
         try {
-            // 尝试两种 prefs 名字
-            SharedPreferences prefs = null;
-            try {
-                prefs = ctx.getSharedPreferences(PREFS_NAME_X, Context.MODE_WORLD_READABLE);
-            } catch (Throwable ignored) {}
-            if (prefs == null) {
-                prefs = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            File f = getConfigFile(ctx);
+            if (f == null || !f.exists()) {
+                log("no config file found, using defaults (drift=3px, interval=30s)");
+                return;
             }
-            sDriftPx = prefs.getInt(KEY_DRIFT_PX, 3);
-            int intervalSec = prefs.getInt(KEY_INTERVAL_SEC, 30);
+            Properties props = new Properties();
+            FileInputStream fis = new FileInputStream(f);
+            props.load(fis);
+            fis.close();
+            sDriftPx = Integer.parseInt(props.getProperty(KEY_DRIFT_PX, "3"));
+            int intervalSec = Integer.parseInt(props.getProperty(KEY_INTERVAL_SEC, "30"));
             sIntervalMs = intervalSec * 1000L;
-            sConfigLoaded = true;
             log("config loaded: drift=" + sDriftPx + "px, interval=" + intervalSec + "s");
         } catch (Throwable t) {
             logE("load config FAILED", t);
@@ -138,20 +154,27 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
 
     private static void startWatchingConfig(Context ctx) {
         try {
-            File prefsDir = new File(ctx.getFilesDir().getParent(), "shared_prefs");
-            File prefsFile = new File(prefsDir, PREFS_NAME_X + ".xml");
-            if (!prefsFile.exists()) {
-                prefsFile = new File(prefsDir, PREFS_NAME + ".xml");
+            File f = getConfigFile(ctx);
+            if (f == null) {
+                // 没有配置文件，监听外部存储目录等它出现
+                File watchDir = new File(
+                        Environment.getExternalStorageDirectory(),
+                        "Android/data/com.gtlx.statusbardrift/files/");
+                if (!watchDir.exists()) {
+                    log("config dir not found, watching skipped");
+                    return;
+                }
+                f = new File(watchDir, CONFIG_FILE);
             }
-            final File finalFile = prefsFile;
+            final File finalFile = f;
             final Context fCtx = ctx;
-            FileObserver observer = new FileObserver(finalFile.getParent(), FileObserver.MODIFY | FileObserver.CLOSE_WRITE) {
+            FileObserver observer = new FileObserver(finalFile.getParent(),
+                    FileObserver.MODIFY | FileObserver.CLOSE_WRITE | FileObserver.CREATE) {
                 @Override
                 public void onEvent(int event, String path) {
                     if (path != null && path.contains("status_bar_drift")) {
                         log("config file changed, reloading");
                         loadConfig(fCtx);
-                        // 重启循环以应用新周期
                         if (sStatusBarView != null) {
                             sStatusBarView.removeCallbacks(sDriftRunnable);
                             sStatusBarView.postDelayed(sDriftRunnable, sIntervalMs);
@@ -160,7 +183,7 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
                 }
             };
             observer.startWatching();
-            log("config watcher started on " + prefsFile.getParent());
+            log("config watcher started on " + finalFile.getAbsolutePath());
         } catch (Throwable t) {
             logE("start config watcher FAILED", t);
         }
@@ -181,7 +204,6 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
         int w = view.getWidth();
         int h = view.getHeight();
         if (w <= 0) {
-            // 还没测量好，再等一次
             view.post(() -> startDrifting(view));
             return;
         }
