@@ -101,7 +101,7 @@ class MainActivity : Activity() {
             setTypeface(null, android.graphics.Typeface.BOLD)
         })
         card.addView(TextView(this).apply {
-            text = "v1.0.0 · 让状态栏像素轮流休息"
+            text = "v0.2.0 · 让状态栏像素轮流休息"
             textSize = 13f
             setTextColor(Color.parseColor("#059669"))
             setPadding(0, dp(6), 0, 0)
