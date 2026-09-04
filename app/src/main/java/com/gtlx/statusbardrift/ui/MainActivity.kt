@@ -9,6 +9,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
+import android.util.Log
 import android.widget.TextView
 import com.gtlx.statusbardrift.config.DriftConfig
 
@@ -31,6 +32,9 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         loadConfig()
+        // 启动时确保配置文件也写到 /data/local/tmp/，SystemUI 能读到
+        syncConfigToTmp()
+
 
         val sv = ScrollView(this)
         val ll = LinearLayout(this).apply {
@@ -161,6 +165,27 @@ class MainActivity : Activity() {
 
     private fun saveConfig() {
         DriftConfig.saveFromUi(this, driftPx, intervalSec)
+    }
+
+    private fun syncConfigToTmp() {
+        // 用 root 权限把配置文件复制到 /data/local/tmp/，SystemUI 能读到
+        Thread {
+            try {
+                val dir = getExternalFilesDir(null) ?: filesDir
+                val src = java.io.File(dir, "status_bar_drift.conf")
+                if (!src.exists()) saveConfig()
+                if (src.exists()) {
+                    val proc = Runtime.getRuntime().exec(arrayOf(
+                        "su", "-c",
+                        "cp ${src.absolutePath} /data/local/tmp/status_bar_drift.conf && chmod 644 /data/local/tmp/status_bar_drift.conf"
+                    ))
+                    val exitCode = proc.waitFor()
+                    Log.d("StatusBarDrift", "syncConfigToTmp exitCode=$exitCode")
+                }
+            } catch (t: Throwable) {
+                Log.e("StatusBarDrift", "syncConfigToTmp failed", t)
+            }
+        }.start()
     }
 
     private fun dp(px: Int): Int = TypedValue.applyDimension(

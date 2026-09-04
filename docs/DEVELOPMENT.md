@@ -127,6 +127,7 @@ adb shell su -c 'killall com.android.systemui'
 | `onAttachedToWindow` 时 View 还没测量 | 用 `view.post { ... }` 等下一轮再启动 |
 | Kotlin  hook `Application.onCreate` 不触发回调 | Kotlin 的 `Application::class.java` 类对象与目标进程 classLoader 不一致，改用 `XposedHelpers.findClass("android.app.Application", lpparam.classLoader)` 或直接 hook 目标 app 内的类获取 Context |
 | LSPosed 管理器里看不到模块 | 检查 `AndroidManifest.xml` 里的 `xposedmodule` meta-data |
+| App 调的参数 SystemUI 读不到 | App 的 `getExternalFilesDir(null)` 可能返回 null，配置 fallback 到内部私有目录，SystemUI 读不到。参考 lsposed-module-dev 技能的「配置同步方案」 |
 
 ---
 

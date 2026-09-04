@@ -34,14 +34,28 @@ object DriftConfig {
     fun saveFromUi(context: Context, driftPx: Int, intervalSec: Int) {
         Thread {
             try {
-                val dir = context.getExternalFilesDir(null) ?: context.filesDir
+                // 优先写外部存储 App 私有目录（SystemUI 可以读）
+                val extDir = context.getExternalFilesDir(null)
+                val dir = extDir ?: context.filesDir
                 val file = File(dir, CONFIG_FILE)
                 val props = Properties()
                 props.setProperty(KEY_DRIFT_PX, driftPx.toString())
                 props.setProperty(KEY_INTERVAL_SEC, intervalSec.toString())
                 FileOutputStream(file).use { props.store(it, "StatusBarDrift config") }
                 file.setReadable(true, false) // 全局可读，SystemUI 才能读
-                log("config saved: drift=${driftPx}px, interval=${intervalSec}s")
+
+                // 复制一份到 /data/local/tmp/ 当兜底（SystemUI 一定能读到）
+                try {
+                    val proc = Runtime.getRuntime().exec(arrayOf(
+                        "su", "-c",
+                        "cp ${file.absolutePath} /data/local/tmp/$CONFIG_FILE && chmod 644 /data/local/tmp/$CONFIG_FILE"
+                    ))
+                    val code = proc.waitFor()
+                    log("sync config to /data/local/tmp exitCode=$code")
+                } catch (t: Throwable) {
+                    logE("sync config to tmp FAILED", t)
+                }
+                log("config saved: drift=${driftPx}px, interval=${intervalSec}s, path=${file.absolutePath}")
             } catch (t: Throwable) {
                 logE("save config FAILED", t)
             }
@@ -82,7 +96,7 @@ object DriftConfig {
     }
 
     private fun getConfigFile(context: Context): File? {
-        // 优先外部存储 App 私有目录
+        // 1. 外部存储 App 私有目录
         try {
             val extDir = File(
                 Environment.getExternalStorageDirectory(),
@@ -90,12 +104,17 @@ object DriftConfig {
             )
             if (extDir.exists()) return extDir
         } catch (_: Throwable) {}
-        // 兜底 App 私有目录
+        // 2. /data/local/tmp/ 兜底（App 有 root 时会复制一份到这）
+        try {
+            val tmpFile = File("/data/local/tmp/$CONFIG_FILE")
+            if (tmpFile.exists()) return tmpFile
+        } catch (_: Throwable) {}
+        // 3. App 内部私有目录（只有 SystemUI 有 root 时才能读，一般读不到）
         try {
             val appDir = File("/data/data/com.gtlx.statusbardrift/files/$CONFIG_FILE")
             if (appDir.exists()) return appDir
         } catch (_: Throwable) {}
-        // 再兜底：从 context 拿
+        // 4. 从 context 拿
         try {
             val f = File(context.getExternalFilesDir(null), CONFIG_FILE)
             if (f.exists()) return f
