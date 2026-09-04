@@ -32,6 +32,15 @@ class ConfigProvider : ContentProvider() {
     }
 
     override fun onCreate(): Boolean {
+        // ★ 修复：App 进程重启（熄屏/内存回收/杀后台）后 Provider 内存=默认值，
+        // 必须从磁盘文件重载，否则 Launcher/SystemUI 读到默认配置，表现为"配置还原"。
+        // （onCreate 在 App 进程创建时最先执行，此时可安全访问 filesDir）
+        try {
+            val ctx = context ?: return true
+            DriftConfig.loadFromFile(ctx)
+        } catch (t: Throwable) {
+            // 首次安装无文件时 loadFromFile 内部已处理，异常不影响 Provider 启动
+        }
         return true
     }
 
