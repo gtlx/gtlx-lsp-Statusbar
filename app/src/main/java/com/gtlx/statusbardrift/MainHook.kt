@@ -1,24 +1,21 @@
 package com.gtlx.statusbardrift
 
-import android.app.Application
 import android.content.Context
+import android.util.Log
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.IXposedHookZygoteInit
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
-import android.util.Log
 import com.gtlx.statusbardrift.config.DriftConfig
 import com.gtlx.statusbardrift.feature.StatusBarDriftFeature
 
 /**
  * Xposed 模块入口
  *
- * 负责：
- * 1. 识别目标进程（com.android.systemui）
- * 2. 加载配置并启动文件监听
- * 3. 初始化各 feature 模块
+ * Hook PhoneStatusBarView，从其 Context 初始化配置和漂移功能。
+ * （不 hook Application.onCreate，因为 Kotlin 编译后 class 引用与目标进程 classLoader 不一致）
  */
 class MainHook : IXposedHookZygoteInit, IXposedHookLoadPackage {
 
@@ -30,45 +27,60 @@ class MainHook : IXposedHookZygoteInit, IXposedHookLoadPackage {
 
     override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
         if (lpparam.packageName != "com.android.systemui") return
+        log("=== target hit ===")
 
-        log("=== target hit: ${lpparam.packageName} ===")
-
-        // Hook Application.onCreate 来获取 Context 并初始化所有功能
         try {
-            XposedHelpers.findAndHookMethod(
-                Application::class.java,
-                "onCreate",
+            val viewClass = XposedHelpers.findClass(
+                "com.android.systemui.statusbar.phone.PhoneStatusBarView",
+                lpparam.classLoader
+            )
+
+            XposedHelpers.findAndHookMethod(viewClass, "onAttachedToWindow",
                 object : XC_MethodHook() {
                     override fun afterHookedMethod(param: MethodHookParam) {
-                        if (initialized) return
-                        initialized = true
-                        val context = param.thisObject as Context
-                        initAll(context, lpparam.classLoader)
+                        val view = param.thisObject as android.view.View
+                        log("PhoneStatusBarView.onAttachedToWindow")
+
+                        if (!initialized) {
+                            initialized = true
+                            try {
+                                val context = view.context.applicationContext
+                                initAll(context, lpparam.classLoader)
+                            } catch (t: Throwable) {
+                                logE("initAll FAILED", t)
+                            }
+                        }
+
+                        view.post { StatusBarDriftFeature.onViewAttached(view) }
                     }
                 })
-            log("hooked Application.onCreate")
+
+            XposedHelpers.findAndHookMethod(viewClass, "onDetachedFromWindow",
+                object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        val view = param.thisObject as android.view.View
+                        StatusBarDriftFeature.onViewDetached(view)
+                    }
+                })
+
+            log("hooked PhoneStatusBarView OK")
         } catch (t: Throwable) {
-            logE("hook Application.onCreate FAILED", t)
+            logE("hook FAILED", t)
         }
     }
 
-    /**
-     * 初始化所有功能模块
-     * 新增功能在这里加一行 init 即可
-     */
     private fun initAll(context: Context, classLoader: ClassLoader) {
         log("initializing all features...")
 
         // 配置加载 & 热更新监听
         DriftConfig.loadAndWatch(context) {
-            // 配置变化时通知各功能
             StatusBarDriftFeature.onConfigChanged()
         }
+        log("config loaded OK")
 
-        // 功能模块（按字母排序，新增往下加）
-        StatusBarDriftFeature.init(classLoader)
-
-        log("all features initialized ✓")
+        // 功能模块初始化（这里放不需要 Context 的 hook 注册）
+        // 注意：PhoneStatusBarView 的 hook 已经在上面注册了
+        log("all features initialized OK")
     }
 
     private fun log(msg: String) {

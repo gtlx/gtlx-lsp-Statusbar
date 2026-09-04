@@ -125,6 +125,7 @@ adb shell su -c 'killall com.android.systemui'
 | `MODE_WORLD_READABLE` 在高版本 Android 不可用 | 配置文件放外部存储 App 私有目录（`getExternalFilesDir`） |
 | Vector 日志里只有 `XposedBridge.log` 的输出 | 调试日志同时打 `Log.d` 和 `XposedBridge.log` |
 | `onAttachedToWindow` 时 View 还没测量 | 用 `view.post { ... }` 等下一轮再启动 |
+| Kotlin  hook `Application.onCreate` 不触发回调 | Kotlin 的 `Application::class.java` 类对象与目标进程 classLoader 不一致，改用 `XposedHelpers.findClass("android.app.Application", lpparam.classLoader)` 或直接 hook 目标 app 内的类获取 Context |
 | LSPosed 管理器里看不到模块 | 检查 `AndroidManifest.xml` 里的 `xposedmodule` meta-data |
 
 ---

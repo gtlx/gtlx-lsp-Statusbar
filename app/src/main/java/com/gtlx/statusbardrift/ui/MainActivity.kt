@@ -139,7 +139,7 @@ class MainActivity : Activity() {
                 修改后配置自动热更新，大多数情况无需重启
                 （幅度变化立即生效，周期变化下次切换时生效）
 
-                版本：2.0.0 (Kotlin)
+                版本：1.0.0
             """.trimIndent()
             textSize = 12f
             setTextColor(0xFF909090.toInt())
