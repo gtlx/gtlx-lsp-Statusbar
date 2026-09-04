@@ -72,8 +72,8 @@ class MainHook : IXposedHookZygoteInit, IXposedHookLoadPackage {
     private fun initAll(context: Context, classLoader: ClassLoader) {
         log("initializing all features...")
 
-        // 配置加载 & 热更新监听
-        DriftConfig.loadAndWatch(context) {
+        // 配置加载 & 热更新监听（ContentProvider 方案，无 root）
+        DriftConfig.loadAndWatchFromProvider(context) {
             StatusBarDriftFeature.onConfigChanged()
         }
         log("config loaded OK")

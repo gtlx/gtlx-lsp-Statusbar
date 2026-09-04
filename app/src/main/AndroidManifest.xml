@@ -25,6 +25,12 @@
             android:name="xposedscope"
             android:resource="@array/xposed_scope" />
 
+        <!-- 配置 ContentProvider —— 无 root 跨进程共享配置 -->
+        <provider
+            android:name=".config.ConfigProvider"
+            android:authorities="com.gtlx.statusbardrift.configprovider"
+            android:exported="true" />
+
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
