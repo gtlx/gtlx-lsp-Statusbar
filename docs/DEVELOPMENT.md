@@ -79,12 +79,17 @@ adb shell su -c 'killall com.android.systemui'
 
 > 版本规则：新项目 0.1.x 起步（语义化版本，功能演进加 minor，修复加 patch）
 
-### 当前版本：v0.2.0
+### 已完成（历史积累）
+- [x] 桌面图标 + 设置界面
+- [x] 偏移幅度 / 切换周期可调
+- [x] 配置文件热更新（修改后自动生效）
+- [x] Kotlin 化 + 模块化架构（config/feature/ui 三层）
 - [x] 状态栏水平漂移（防烧屏核心）
-- [x] 桌面图标 + 设置界面（Soft UI + Glassmorphism 风格）
-- [x] 偏移幅度 / 切换周期可调（说明含耗电/效果关系）
+- [x] 设置界面 Soft UI + Glassmorphism 风格美化
 - [x] 配置同步 ContentProvider 化（**无 root**，核心功能零权限）
 - [x] root 增强保留（一键重启 SystemUI，无 root 降级手动）
+
+### 当前版本：v0.2.0
 
 ### v0.3+ 规划（按优先级排序）
 
